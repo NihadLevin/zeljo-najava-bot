@@ -1,44 +1,15 @@
-# Stavi ovaj fajl u repo na putanju: .github/workflows/najava.yml
-name: Najava utakmice
+name: Test izvora
 
 on:
-  schedule:
-    # GitHub koristi UTC vrijeme: 06:00 UTC = 08:00 ljeti, 07:00 UTC = 08:00 zimi.
-    # Bot sam provjeri bh. vrijeme i objavi samo jednom dnevno.
-    - cron: "0 6 * * *"
-    - cron: "0 7 * * *"
-  workflow_dispatch:         # ručno pokretanje = odmah objavi (za test)
-
-permissions:
-  contents: write            # da može sačuvati zadnja_najava.json
-
-concurrency:
-  group: najava
-  cancel-in-progress: false
+  workflow_dispatch:
 
 jobs:
-  najava:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - run: pip install curl_cffi
-
-      - name: Objavi jutarnju najavu
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_NAJAVA_WEBHOOK }}
-          SOFASCORE_BASE: ${{ secrets.SOFASCORE_BASE }}
-        run: python najava_bot.py
-
-      - name: Sačuvaj datum zadnje objave
-        run: |
-          git config user.name "najava-bot"
-          git config user.email "najava-bot@users.noreply.github.com"
-          git add zadnja_najava.json 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "Jutarnja najava"
-          git pull --rebase    # ako je bot za vijesti u međuvremenu nešto commitao
-          git push
+      - run: python test_izvori.py
