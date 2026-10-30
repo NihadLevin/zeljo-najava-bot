@@ -17,7 +17,10 @@ TEAM_ID = 5240            # FK Željezničar
 POST_HOUR = 8             # objava u 08:00 po bh. vremenu
 # ručno pokretanje (GitHub "Run workflow" ili FORCE=1) objavljuje odmah
 FORCE = os.environ.get("FORCE") == "1" or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-BASE = "https://www.sofascore.com/api/v1/"
+# Ako je postavljen SOFASCORE_BASE (npr. Cloudflare Worker), ide preko njega
+BASE = os.environ.get("SOFASCORE_BASE") or "https://www.sofascore.com/api/v1/"
+if not BASE.endswith("/"):
+    BASE += "/"
 STATE_FILE = Path("zadnja_najava.json")
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
