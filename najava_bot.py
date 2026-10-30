@@ -135,6 +135,47 @@ def h2h_lines(match, team, limit=5):
     return "\n".join(lines) or "Nema podataka"
 
 
+TEZINA = {"easy": "lagan", "moderate": "srednji", "medium": "srednji",
+          "hard": "težak", "tough": "težak", "brutal": "brutalan"}
+TEZINA_MECA = {1: "lako", 2: "srednje", 3: "teško"}
+
+
+def last_match_line(team):
+    m = (team.get("overview") or {}).get("lastMatch")
+    if not m or not (m.get("status") or {}).get("scoreStr"):
+        return None
+    date = sarajevo_time(parse_utc(m["status"]["utcTime"]))
+    res = {1: "🟢", 0: "🟡", -1: "🔴"}.get(m.get("result"), "")
+    score = m["status"]["scoreStr"].replace(" - ", ":")
+    return f"{date:%d.%m.}: {short(m['home']['name'])} {score} {short(m['away']['name'])} {res}".strip()
+
+
+def next_matches_lines(team, match, limit=3):
+    fd = {f["matchId"]: f.get("difficulty")
+          for f in ((team.get("overview") or {}).get("fixtureDifficulty") or {}).get("fixtures", [])}
+    upcoming = [f for f in team["fixtures"]["allFixtures"]["fixtures"]
+                if f.get("notStarted") and f["id"] != match["id"]]
+    upcoming.sort(key=lambda f: f["status"]["utcTime"])
+    lines = []
+    for f in upcoming[:limit]:
+        date = sarajevo_time(parse_utc(f["status"]["utcTime"]))
+        home = f["home"]["id"] == TEAM_ID
+        opp = short(f["away"]["name"] if home else f["home"]["name"])
+        tez = TEZINA_MECA.get(fd.get(f["id"]))
+        lines.append(f"{date:%d.%m.} {opp} ({'D' if home else 'G'})" + (f" – {tez}" if tez else ""))
+    return "\n".join(lines)
+
+
+def difficulty_line(team):
+    fd = (team.get("overview") or {}).get("fixtureDifficulty") or {}
+    if not fd.get("difficulty"):
+        return None
+    label = TEZINA.get(fd["difficulty"].lower(), fd["difficulty"])
+    n = fd.get("difficultyMatches") or 3
+    opps = [short(f["opponentName"]) for f in fd.get("fixtures", [])[:n]]
+    return f"**{label.capitalize()}** – naredne {n}: " + ", ".join(opps)
+
+
 def round_number(team, match):
     """Kolo = redni broj utakmice u ligi ove sezone (FotMob ga ne daje direktno)."""
     league = match.get("tournament", {}).get("leagueId")
@@ -195,6 +236,16 @@ def build_embed(team, match):
     if sl:
         fields.append({"name": f"🎯 Statistika ({hn} – {an})", "value": sl, "inline": False})
     fields.append({"name": "⚔️ Međusobni dueli", "value": h2h_lines(match, team), "inline": False})
+
+    lm = last_match_line(team)
+    if lm:
+        fields.append({"name": "🔙 Zadnja utakmica", "value": lm, "inline": False})
+    nm = next_matches_lines(team, match)
+    if nm:
+        fields.append({"name": "📅 Naredne utakmice (D = doma, G = gosti)", "value": nm, "inline": False})
+    dl = difficulty_line(team)
+    if dl:
+        fields.append({"name": "🧗 Težina rasporeda", "value": dl, "inline": False})
 
     return {
         "title": f"⚽ Najava: {home['name']} – {away['name']}",
