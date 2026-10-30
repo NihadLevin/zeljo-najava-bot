@@ -29,17 +29,32 @@ FORM_EMOJI = {"W": "🟢", "D": "🟡", "L": "🔴"}
 DANI = ["ponedjeljak", "utorak", "srijeda", "četvrtak", "petak", "subota", "nedjelja"]
 
 
+try:
+    # curl_cffi se predstavlja kao pravi Chrome – SofaScore tada rjeđe vraća 403
+    from curl_cffi import requests as cffi_requests
+except ImportError:
+    cffi_requests = None
+
+
 def get(path):
-    req = urllib.request.Request(BASE + path, headers=HEADERS)
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return json.load(r)
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return None          # nema podataka (npr. kvote, glasanje)
-        if e.code == 403:
-            sys.exit("SofaScore je odbio zahtjev (403). Pokreni bota sa svog računara.")
-        raise
+    if cffi_requests:
+        r = cffi_requests.get(BASE + path, headers={"Referer": HEADERS["Referer"]},
+                              impersonate="chrome", timeout=30)
+        code = r.status_code
+        if code == 200:
+            return r.json()
+    else:
+        req = urllib.request.Request(BASE + path, headers=HEADERS)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as e:
+            code = e.code
+    if code == 404:
+        return None              # nema podataka (npr. kvote, glasanje)
+    if code == 403:
+        sys.exit("SofaScore je odbio zahtjev (403). Pokreni bota sa svog računara.")
+    sys.exit(f"SofaScore greška {code} za {path}")
 
 
 # ---------- vrijeme u Sarajevu (CET/CEST) bez dodatnih paketa ----------
