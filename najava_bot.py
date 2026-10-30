@@ -56,7 +56,8 @@ def get(path):
     if code == 404:
         return None              # nema podataka (npr. kvote, glasanje)
     if code == 403:
-        sys.exit("SofaScore je odbio zahtjev (403). Pokreni bota sa svog računara.")
+        izvor = "preko Cloudflare Workera" if "sofascore.com" not in BASE else "direktno (SOFASCORE_BASE nije postavljen)"
+        sys.exit(f"SofaScore je odbio zahtjev (403) – {izvor}.")
     sys.exit(f"SofaScore greška {code} za {path}")
 
 
