@@ -26,6 +26,8 @@ jobs:
         with:
           python-version: "3.12"
 
+      - run: pip install curl_cffi
+
       - name: Objavi jutarnju najavu
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_NAJAVA_WEBHOOK }}
