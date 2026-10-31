@@ -21,6 +21,10 @@ on:
         type: choice
         options: [najava, rezultat, oboje]
         default: najava
+      prisilno:
+        description: "Objavi ponovo i ako je već objavljeno"
+        type: boolean
+        default: false
 
 permissions:
   contents: write            # so it can save zadnja_najava.json
@@ -33,7 +37,11 @@ jobs:
   najava:
     runs-on: ubuntu-latest
     steps:
+      # check out the LATEST commit of the branch, not the one from when the run
+      # was scheduled – otherwise a queued run could miss what was just posted
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
 
       - uses: actions/setup-python@v5
         with:
@@ -43,6 +51,7 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_NAJAVA_WEBHOOK }}
           RUCNO: ${{ inputs.rucno }}
+          PRISILNO: ${{ inputs.prisilno }}
         run: python najava_bot.py
 
       - name: Sačuvaj šta je objavljeno
