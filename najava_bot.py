@@ -1,7 +1,9 @@
 """
-Najava bot – FK Željezničar
-Svako jutro u 08:00 (bh. vrijeme) objavi najavu naredne utakmice na Discord.
-Podaci: FotMob (bez registracije, radi i s GitHub Actions).
+Match preview bot – FK Željezničar
+1) Posts the RESULT of each match as soon as FotMob marks it finished.
+2) Posts ONE preview per match: at 08:00 (Sarajevo time) on the first
+   morning after the previous match.
+Data: FotMob (no registration, works from GitHub Actions).
 """
 import json
 import os
@@ -13,10 +15,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL", "")
-TEAM_ID = 10108           # FK Željezničar na FotMobu
-POST_HOUR = 8             # objava u 08:00 po bh. vremenu
-# ručno pokretanje (GitHub "Run workflow" ili FORCE=1) objavljuje odmah
-FORCE = os.environ.get("FORCE") == "1" or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+TEAM_ID = 10108           # FK Željezničar on FotMob
+POST_HOUR = 8             # post at 08:00 Sarajevo time
+MAX_WAIT_MIN = 60         # if started early, wait at most 60 min until 08:00
+RESULT_MAX_AGE_H = 36     # post a result only if the match ended at most 36 h ago
+# a manual run (GitHub "Run workflow" or FORCE=1) posts immediately;
+# RUCNO chooses what to post: "najava", "rezultat" or "oboje"
+MANUAL = os.environ.get("FORCE") == "1" or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+MANUAL_MODE = os.environ.get("RUCNO") or "najava"
 BASE = "https://www.fotmob.com"
 STATE_FILE = Path("zadnja_najava.json")
 HEADERS = {
@@ -39,7 +45,7 @@ def get(path, required=True):
         return None
 
 
-# ---------- vrijeme u Sarajevu (CET/CEST) bez dodatnih paketa ----------
+# ---------- Sarajevo time (CET/CEST) without extra packages ----------
 def _last_sunday(year, month):
     d = datetime(year, month + 1, 1, tzinfo=timezone.utc) - timedelta(days=1)
     return d - timedelta(days=(d.weekday() + 1) % 7)
@@ -61,7 +67,7 @@ def short(name):
     return name[3:] if name.startswith("FK ") else name
 
 
-# ---------- dijelovi najave ----------
+# ---------- preview sections ----------
 def table_rows(team):
     try:
         return team["table"][0]["data"]["table"]["all"]
@@ -79,7 +85,7 @@ def table_line(rows, team_id):
 
 
 def full_table(rows, highlight_ids):
-    """Cijela tabela u code bloku (Discord ne podržava prave tabele)."""
+    """Full table in a code block (Discord has no real tables)."""
     lines = ["#  Klub              U  Gol    Bod"]
     for r in rows:
         name = short(r["name"])[:16]
@@ -109,7 +115,7 @@ def stats_lines(match):
 
 
 def h2h_lines(match, team, limit=5):
-    """Međusobni dueli: prvo iz detalja utakmice, inače iz ove sezone."""
+    """Head-to-head: from match details first, otherwise from this season's fixtures."""
     results = []
     details = get(f"/api/data/matchDetails?matchId={match['id']}", required=False)
     try:
@@ -135,6 +141,7 @@ def h2h_lines(match, team, limit=5):
     return "\n".join(lines) or "Nema podataka"
 
 
+# FotMob difficulty labels -> Bosnian
 TEZINA = {"easy": "lagan", "moderate": "srednji", "medium": "srednji",
           "hard": "težak", "tough": "težak", "brutal": "brutalan"}
 TEZINA_MECA = {1: "lako", 2: "srednje", 3: "teško"}
@@ -151,6 +158,7 @@ def last_match_line(team):
 
 
 def next_matches_lines(team, match, limit=3):
+    # difficulty per match (1–3) from FotMob's fixture difficulty widget
     fd = {f["matchId"]: f.get("difficulty")
           for f in ((team.get("overview") or {}).get("fixtureDifficulty") or {}).get("fixtures", [])}
     upcoming = [f for f in team["fixtures"]["allFixtures"]["fixtures"]
@@ -177,7 +185,7 @@ def difficulty_line(team):
 
 
 def round_number(team, match):
-    """Kolo = redni broj utakmice u ligi ove sezone (FotMob ga ne daje direktno)."""
+    """Round = match number in the league this season (FotMob doesn't provide it directly)."""
     league = match.get("tournament", {}).get("leagueId")
     league_fx = [f for f in team["fixtures"]["allFixtures"]["fixtures"]
                  if f.get("tournament", {}).get("leagueId") == league]
@@ -190,7 +198,7 @@ def round_number(team, match):
 
 def venue_text(team, match):
     host = team
-    if match["home"]["id"] != TEAM_ID:          # gostovanje – stadion domaćina
+    if match["home"]["id"] != TEAM_ID:          # away match – use the home team's stadium
         host = get(f"/api/data/teams?id={match['home']['id']}", required=False) or {}
     v = (host.get("overview") or {}).get("venue") or {}
     name = (v.get("widget") or {}).get("name")
@@ -264,33 +272,196 @@ def post(embed):
     urllib.request.urlopen(req, timeout=30)
 
 
-def main():
-    state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
-    now_local = sarajevo_time(time.time())
-    today = now_local.strftime("%Y-%m-%d")
-
-    if not FORCE:
-        if state.get("datum") == today:
-            print(f"Najava za danas ({today}) je već objavljena.")
-            return
-        if now_local.hour < POST_HOUR:
-            print(f"Sada je {now_local:%H:%M} u Sarajevu – objava tek od {POST_HOUR:02d}:00.")
-            return
-
-    team = get(f"/api/data/teams?id={TEAM_ID}")
+def next_match(team):
     match = (team.get("overview") or {}).get("nextMatch")
     if not match or parse_utc(match["status"]["utcTime"]) < time.time():
-        print("Naredna utakmica još nije objavljena na FotMobu.")
-        return
+        return None
+    return match
 
-    embed = build_embed(team, match)
 
+def match_today_not_finished(team, today):
+    """True if Želja has a match today that hasn't finished yet (or one is live)."""
+    if (team.get("overview") or {}).get("hasOngoingMatch"):
+        return True
+    for f in team["fixtures"]["allFixtures"]["fixtures"]:
+        st = f.get("status", {})
+        if st.get("cancelled") or st.get("finished"):
+            continue
+        if sarajevo_time(parse_utc(st["utcTime"])).strftime("%Y-%m-%d") == today:
+            return True
+    return False
+
+
+# ---------- result post ----------
+def scorers(match_id):
+    """Goal scorers from FotMob match details; empty if not available."""
+    details = get(f"/api/data/matchDetails?matchId={match_id}", required=False)
+    out = {}
+    try:
+        events = details["header"]["events"]
+        for side in ("homeTeamGoals", "awayTeamGoals"):
+            goals = []
+            for name, evs in (events.get(side) or {}).items():
+                for ev in evs:
+                    minute = ev.get("timeStr") or ev.get("time")
+                    who = ev.get("fullName") or ev.get("nameStr") or name
+                    extra = " (pen.)" if ev.get("isPenalty") or ev.get("goalDescription") == "Penalty" else ""
+                    extra = " (a.g.)" if ev.get("ownGoal") else extra
+                    goals.append((int(str(ev.get("time", 0)).split("+")[0] or 0), f"{who} {minute}'{extra}"))
+            goals.sort()
+            out[side] = [g for _, g in goals]
+    except (KeyError, TypeError, AttributeError, ValueError):
+        return {}
+    return out
+
+
+def league_played(team, league_id):
+    return sum(1 for f in team["fixtures"]["allFixtures"]["fixtures"]
+               if f.get("tournament", {}).get("leagueId") == league_id
+               and f.get("status", {}).get("finished"))
+
+
+def build_result_embed(team, m):
+    home, away = m["home"], m["away"]
+    score = m["status"]["scoreStr"].replace(" - ", ":")
+    res = m.get("result")
+    verdict = {1: "🟢 Pobjeda", 0: "🟡 Remi", -1: "🔴 Poraz"}.get(res, "")
+    color = {1: 0x2ECC71, 0: 0xF1C40F, -1: 0xE74C3C}.get(res, 0x0066CC)
+    start = sarajevo_time(parse_utc(m["status"]["utcTime"]))
+    competition = m.get("tournament", {}).get("name", "")
+    if competition == "Premier League":
+        competition = "WWIN liga BiH"
+
+    fields = []
+    if verdict:
+        fields.append({"name": "Ishod", "value": verdict, "inline": True})
+    kolo = round_number(team, m)
+    if kolo and competition == "WWIN liga BiH":
+        fields.append({"name": "🔢 Kolo", "value": kolo, "inline": True})
+    fields.append({"name": "🗓️ Odigrano", "value": f"{start:%d.%m.%Y}", "inline": True})
+
+    sc = scorers(m["id"])
+    if sc.get("homeTeamGoals") or sc.get("awayTeamGoals"):
+        fields.append({"name": f"⚽ {short(home['name'])}",
+                       "value": "\n".join(sc.get("homeTeamGoals") or []) or "-", "inline": True})
+        fields.append({"name": f"⚽ {short(away['name'])}",
+                       "value": "\n".join(sc.get("awayTeamGoals") or []) or "-", "inline": True})
+
+    # only show the table if FotMob has already counted this match
+    rows = table_rows(team)
+    league = m.get("tournament", {}).get("leagueId")
+    for r in rows:
+        if r["id"] == TEAM_ID and r["played"] == league_played(team, league):
+            fields.append({"name": "📊 Željezničar na tabeli",
+                           "value": table_line(rows, TEAM_ID), "inline": False})
+
+    return {
+        "title": f"🏁 Kraj: {home['name']} {score} {away['name']}",
+        "url": BASE + m.get("pageUrl", ""),
+        "color": color,
+        "fields": fields,
+        "footer": {"text": f"{competition} • podaci: FotMob"},
+    }
+
+
+def send(embed, label):
     if not WEBHOOK:
-        print(json.dumps(embed, indent=2, ensure_ascii=False))   # test bez Discorda
+        print(json.dumps(embed, indent=2, ensure_ascii=False))   # test without Discord
+    else:
+        post(embed)
+        print(f"{label}: {embed['title']}")
+
+
+def save(state):
+    STATE_FILE.write_text(json.dumps(state))
+
+
+def do_result(team, state, now):
+    """Post the result of the last match once, as soon as FotMob marks it finished."""
+    m = (team.get("overview") or {}).get("lastMatch") or {}
+    st = m.get("status") or {}
+    if not st.get("finished") or not st.get("scoreStr") or st.get("cancelled"):
+        return False
+    if state.get("rezultat") == m["id"]:
+        print("Rezultat zadnje utakmice je već objavljen.")
+        return False
+    # don't post old results (e.g. right after first setup)
+    if now - parse_utc(st["utcTime"]) > RESULT_MAX_AGE_H * 3600:
+        print("Zadnja utakmica je prestara za objavu rezultata.")
+        state["rezultat"] = m["id"]
+        return True          # remember it so we don't check again
+    send(build_result_embed(team, m), "Objavljen rezultat")
+    state["rezultat"] = m["id"]
+    return True
+
+
+def do_preview(team, state, now_local, today):
+    """Post one preview per match, the morning after the previous match."""
+    target = now_local.replace(hour=POST_HOUR, minute=0, second=0, microsecond=0)
+    wait = (target - now_local).total_seconds()
+    if wait > MAX_WAIT_MIN * 60:
+        print(f"Sada je {now_local:%H:%M} u Sarajevu – najava tek u {POST_HOUR:02d}:00.")
+        return False
+
+    match = next_match(team)
+    if not match:
+        print("Naredna utakmica još nije objavljena na FotMobu.")
+        return False
+    if state.get("utakmica") == match["id"]:
+        print(f"Najava za {match['home']['name']} – {match['away']['name']} je već objavljena.")
+        return False
+    # a match today that isn't over yet (or live) – no preview for the next one yet
+    if match_today_not_finished(team, today) and \
+            sarajevo_time(parse_utc(match["status"]["utcTime"])).strftime("%Y-%m-%d") != today:
+        print("Danas se još igra utakmica – najava za narednu ide poslije.")
+        return False
+    # GitHub can run very late: if the previous match was played today,
+    # don't post in the evening – the preview goes out the next morning
+    last = (team.get("overview") or {}).get("lastMatch") or {}
+    last_utc = (last.get("status") or {}).get("utcTime")
+    if last_utc and sarajevo_time(parse_utc(last_utc)).strftime("%Y-%m-%d") >= today:
+        print("Prethodna utakmica je odigrana danas – najava ide sutra u 08:00.")
+        return False
+    # new match to announce: wait until exactly 08:00, then refresh the data
+    if wait > 0:
+        print(f"Sada je {now_local:%H:%M} – čekam do {POST_HOUR:02d}:00 ({wait / 60:.0f} min).")
+        time.sleep(wait)
+        team = get(f"/api/data/teams?id={TEAM_ID}")
+        match = next_match(team)
+        if not match:
+            print("Naredna utakmica nije dostupna.")
+            return False
+    send(build_embed(team, match), "Objavljena najava")
+    state["utakmica"] = match["id"]
+    state["datum"] = today
+    return True
+
+
+def main():
+    state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
+    now = time.time()
+    now_local = sarajevo_time(now)
+    today = now_local.strftime("%Y-%m-%d")
+
+    team = get(f"/api/data/teams?id={TEAM_ID}")
+
+    if MANUAL:
+        # manual test run: post what was chosen in GitHub ("najava", "rezultat" or "oboje")
+        if MANUAL_MODE in ("rezultat", "oboje"):
+            m = (team.get("overview") or {}).get("lastMatch")
+            if m:
+                send(build_result_embed(team, m), "Objavljen rezultat (ručno)")
+        if MANUAL_MODE in ("najava", "oboje"):
+            match = next_match(team)
+            if match:
+                send(build_embed(team, match), "Objavljena najava (ručno)")
         return
-    post(embed)
-    STATE_FILE.write_text(json.dumps({"datum": today, "utakmica": match["id"]}))
-    print(f"Objavljena najava: {embed['title']}")
+
+    # 1) result first, 2) then the preview (never the other way round)
+    changed = do_result(team, state, now)
+    changed = do_preview(team, state, now_local, today) or changed
+    if changed and WEBHOOK:
+        save(state)
 
 
 if __name__ == "__main__":
