@@ -23,6 +23,8 @@ RESULT_MAX_AGE_H = 36     # post a result only if the match ended at most 36 h a
 # RUCNO chooses what to post: "najava", "rezultat" or "oboje"
 MANUAL = os.environ.get("FORCE") == "1" or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
 MANUAL_MODE = os.environ.get("RUCNO") or "najava"
+# manual runs also skip anything already posted, unless PRISILNO=true
+MANUAL_FORCE = (os.environ.get("PRISILNO") or "").lower() == "true"
 BASE = "https://www.fotmob.com"
 STATE_FILE = Path("zadnja_najava.json")
 HEADERS = {
@@ -373,7 +375,9 @@ def send(embed, label):
 
 
 def save(state):
-    STATE_FILE.write_text(json.dumps(state))
+    # written right after every post, so a later error can't cause a repost
+    if WEBHOOK:
+        STATE_FILE.write_text(json.dumps(state))
 
 
 def do_result(team, state, now):
@@ -389,9 +393,11 @@ def do_result(team, state, now):
     if now - parse_utc(st["utcTime"]) > RESULT_MAX_AGE_H * 3600:
         print("Zadnja utakmica je prestara za objavu rezultata.")
         state["rezultat"] = m["id"]
-        return True          # remember it so we don't check again
+        save(state)          # remember it so we don't check again
+        return True
     send(build_result_embed(team, m), "Objavljen rezultat")
     state["rezultat"] = m["id"]
+    save(state)
     return True
 
 
@@ -431,9 +437,14 @@ def do_preview(team, state, now_local, today):
         if not match:
             print("Naredna utakmica nije dostupna.")
             return False
+    # re-check right before posting (the data may have been refreshed after waiting)
+    if state.get("utakmica") == match["id"]:
+        print("Najava je već objavljena.")
+        return False
     send(build_embed(team, match), "Objavljena najava")
     state["utakmica"] = match["id"]
     state["datum"] = today
+    save(state)
     return True
 
 
@@ -446,22 +457,34 @@ def main():
     team = get(f"/api/data/teams?id={TEAM_ID}")
 
     if MANUAL:
-        # manual test run: post what was chosen in GitHub ("najava", "rezultat" or "oboje")
+        # manual run: post what was chosen in GitHub ("najava", "rezultat" or "oboje"),
+        # but never something already posted – unless PRISILNO is ticked
         if MANUAL_MODE in ("rezultat", "oboje"):
             m = (team.get("overview") or {}).get("lastMatch")
-            if m:
+            if not m:
+                print("Nema odigrane utakmice.")
+            elif state.get("rezultat") == m["id"] and not MANUAL_FORCE:
+                print("Rezultat zadnje utakmice je već objavljen – preskačem.")
+            else:
                 send(build_result_embed(team, m), "Objavljen rezultat (ručno)")
+                state["rezultat"] = m["id"]
+                save(state)
         if MANUAL_MODE in ("najava", "oboje"):
             match = next_match(team)
-            if match:
+            if not match:
+                print("Naredna utakmica još nije objavljena na FotMobu.")
+            elif state.get("utakmica") == match["id"] and not MANUAL_FORCE:
+                print("Najava za narednu utakmicu je već objavljena – preskačem.")
+            else:
                 send(build_embed(team, match), "Objavljena najava (ručno)")
+                state["utakmica"] = match["id"]
+                state["datum"] = today
+                save(state)
         return
 
     # 1) result first, 2) then the preview (never the other way round)
-    changed = do_result(team, state, now)
-    changed = do_preview(team, state, now_local, today) or changed
-    if changed and WEBHOOK:
-        save(state)
+    do_result(team, state, now)
+    do_preview(team, state, now_local, today)
 
 
 if __name__ == "__main__":
