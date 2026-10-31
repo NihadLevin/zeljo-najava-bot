@@ -1,16 +1,29 @@
-# Stavi ovaj fajl u repo na putanju: .github/workflows/najava.yml
+# Put this file in the repo at: .github/workflows/najava.yml
 name: Najava utakmice
 
 on:
   schedule:
-    # GitHub koristi UTC vrijeme: 06:00 UTC = 08:00 ljeti, 07:00 UTC = 08:00 zimi.
-    # Bot sam provjeri bh. vrijeme i objavi samo jednom dnevno.
-    - cron: "0 6 * * *"
-    - cron: "0 7 * * *"
-  workflow_dispatch:         # ručno pokretanje = odmah objavi (za test)
+    # Morning – preview. GitHub uses UTC and is often late, so the bot starts
+    # ~25 min early and waits until exactly 08:00 itself; later runs are backups.
+    # Winter (UTC+1): 06:35 too early · 07:35 waits until 08:00 · 08:15–10:15 backups
+    # Summer (UTC+2): 07:35 waits until 08:00 · 08:35–11:15 backups
+    - cron: "35 5 * * *"
+    - cron: "35 6 * * *"
+    - cron: "15 7-9 * * *"
+    # Afternoon/evening – result. Every 20 min, 12:00–22:40 UTC
+    # (winter 13:00–23:40, summer 14:00–00:40 Sarajevo time).
+    # Each run exits in seconds if there's nothing new to post.
+    - cron: "*/20 12-22 * * *"
+  workflow_dispatch:         # manual run = post immediately (for testing)
+    inputs:
+      rucno:
+        description: "Šta objaviti"
+        type: choice
+        options: [najava, rezultat, oboje]
+        default: najava
 
 permissions:
-  contents: write            # da može sačuvati zadnja_najava.json
+  contents: write            # so it can save zadnja_najava.json
 
 concurrency:
   group: najava
@@ -26,16 +39,22 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Objavi jutarnju najavu
+      - name: Objavi rezultat / najavu
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_NAJAVA_WEBHOOK }}
+          RUCNO: ${{ inputs.rucno }}
         run: python najava_bot.py
 
-      - name: Sačuvaj datum zadnje objave
+      - name: Sačuvaj šta je objavljeno
         run: |
           git config user.name "najava-bot"
           git config user.email "najava-bot@users.noreply.github.com"
           git add zadnja_najava.json 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "Jutarnja najava"
-          git pull --rebase    # ako je bot za vijesti u međuvremenu nešto commitao
-          git push
+          git diff --cached --quiet && exit 0
+          git commit -m "Objava"
+          # retry so the "already posted" record is never lost (avoids duplicate posts)
+          for i in 1 2 3; do
+            git pull --rebase && git push && exit 0
+            sleep 10
+          done
+          exit 1
