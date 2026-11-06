@@ -133,7 +133,11 @@ def preuzmi_kvote(headless=True):
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless)
+        try:
+            # use the installed Google Chrome (preinstalled on GitHub runners) – no download needed
+            browser = p.chromium.launch(headless=headless, channel="chrome")
+        except Exception:
+            browser = p.chromium.launch(headless=headless)   # Playwright's own Chromium
         context = browser.new_context(
             viewport={"width": 1500, "height": 1000},
             timezone_id="Europe/Sarajevo",
