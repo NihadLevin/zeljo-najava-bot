@@ -7,7 +7,6 @@ Data: FotMob (no registration, works from GitHub Actions).
 """
 import json
 import os
-import subprocess
 import sys
 import time
 import urllib.error
@@ -215,54 +214,7 @@ def venue_text(team, match):
     return text
 
 
-# ---------- Meridianbet odds (optional – the preview is posted without them if anything fails) ----------
-def ensure_playwright():
-    """Installs Playwright + Chromium on the fly (only on runs that actually post a preview)."""
-    try:
-        import playwright  # noqa: F401
-    except ImportError:
-        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "playwright"], check=True)
-    subprocess.run([sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"],
-                   check=True, timeout=600, stdout=subprocess.DEVNULL)
-
-
-def meridian_rows():
-    """All WWIN Liga odds from Meridianbet, or [] if the site can't be read."""
-    try:
-        ensure_playwright()
-        from meridian_kvote import preuzmi_kvote
-        rows = preuzmi_kvote()
-        print(f"Meridian: pronađeno {len(rows)} utakmica.")
-        return rows
-    except Exception as e:      # odds are a bonus – never let them break the preview
-        print(f"Meridian kvote nedostupne: {e}")
-        return []
-
-
-def match_odds(match):
-    from meridian_kvote import find_match_odds
-    odds = find_match_odds(meridian_rows(), match["home"]["name"], match["away"]["name"])
-    if not odds or not any(odds[k] for k in ("1", "X", "2")):
-        print("Kvote za ovu utakmicu još nisu na Meridianu.")
-        return None
-    return odds
-
-
-def match_odds_ok(odds, match):
-    from meridian_kvote import find_match_odds
-    return find_match_odds([odds], match["home"]["name"], match["away"]["name"]) is not None
-
-
-def odds_text(o):
-    k = lambda v: f"{v:.2f}".replace(".", ",") if v else "–"
-    text = f"`1: {k(o['1'])} │ X: {k(o['X'])} │ 2: {k(o['2'])}`"
-    if o.get("Granica_golova"):
-        g = f"{o['Granica_golova']:g}".replace(".", ",")
-        text += f"\n{g} golova: manje {k(o['Manje_golova'])} · više {k(o['Vise_golova'])}"
-    return text
-
-
-def build_embed(team, match, odds=None):
+def build_embed(team, match):
     home, away = match["home"], match["away"]
     start = sarajevo_time(parse_utc(match["status"]["utcTime"]))
     rows = table_rows(team)
@@ -304,8 +256,6 @@ def build_embed(team, match, odds=None):
     dl = difficulty_line(team)
     if dl:
         fields.append({"name": "🧗 Težina rasporeda", "value": dl, "inline": False})
-    if odds:
-        fields.append({"name": "💰 Kvote (Meridianbet, 18+)", "value": odds_text(odds), "inline": False})
 
     return {
         "title": f"⚽ Najava: {home['name']} – {away['name']}",
@@ -478,11 +428,7 @@ def do_preview(team, state, now_local, today):
     if last_utc and sarajevo_time(parse_utc(last_utc)).strftime("%Y-%m-%d") >= today:
         print("Prethodna utakmica je odigrana danas – najava ide sutra u 08:00.")
         return False
-    # new match to announce: fetch the odds first (takes a minute), then
-    # wait until exactly 08:00 and refresh the FotMob data
-    odds = match_odds(match)
-    now_local = sarajevo_time(time.time())
-    wait = (target - now_local).total_seconds()
+    # new match to announce: wait until exactly 08:00, then refresh the data
     if wait > 0:
         print(f"Sada je {now_local:%H:%M} – čekam do {POST_HOUR:02d}:00 ({wait / 60:.0f} min).")
         time.sleep(wait)
@@ -495,10 +441,7 @@ def do_preview(team, state, now_local, today):
     if state.get("utakmica") == match["id"]:
         print("Najava je već objavljena.")
         return False
-    # the data was refreshed after waiting – keep the odds only if they're still for this match
-    if odds and not match_odds_ok(odds, match):
-        odds = None
-    send(build_embed(team, match, odds), "Objavljena najava")
+    send(build_embed(team, match), "Objavljena najava")
     state["utakmica"] = match["id"]
     state["datum"] = today
     save(state)
@@ -512,14 +455,6 @@ def main():
     today = now_local.strftime("%Y-%m-%d")
 
     team = get(f"/api/data/teams?id={TEAM_ID}")
-
-    if MANUAL and MANUAL_MODE == "kvote":
-        # test: only print what Meridian returns, post nothing
-        for r in meridian_rows():
-            print(f"  {r['Dan']} {r['Vrijeme_Sarajevo']}  {r['Domacin']} – {r['Gost']}: "
-                  f"1={r['1']} X={r['X']} 2={r['2']}  "
-                  f"golovi {r['Granica_golova']}: -{r['Manje_golova']} +{r['Vise_golova']}")
-        return
 
     if MANUAL:
         # manual run: post what was chosen in GitHub ("najava", "rezultat" or "oboje"),
@@ -541,7 +476,7 @@ def main():
             elif state.get("utakmica") == match["id"] and not MANUAL_FORCE:
                 print("Najava za narednu utakmicu je već objavljena – preskačem.")
             else:
-                send(build_embed(team, match, match_odds(match)), "Objavljena najava (ručno)")
+                send(build_embed(team, match), "Objavljena najava (ručno)")
                 state["utakmica"] = match["id"]
                 state["datum"] = today
                 save(state)
