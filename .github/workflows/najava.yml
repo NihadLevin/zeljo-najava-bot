@@ -1,28 +1,17 @@
-# Put this file in the repo at: .github/workflows/najava.yml
-# One workflow for everything: match preview, result and Meridian odds.
+# One workflow for everything: match result, match preview and Meridian odds.
+# Triggered from cron-job.org (workflow_dispatch through the GitHub API) – no GitHub schedule.
+# A cron-job.org call without inputs uses rucno = "auto", which does everything by the rules:
+#   result (once, after the match) -> preview (once per match, from 08:00 the morning after) -> odds
 name: Najava utakmice
 
 on:
-  schedule:
-    # Morning – preview. GitHub uses UTC and is often late, so the bot starts
-    # ~25 min early and waits until exactly 08:00 itself; later runs are backups.
-    # Winter (UTC+1): 06:35 too early · 07:35 waits until 08:00 · 08:15–10:15 backups
-    # Summer (UTC+2): 07:35 waits until 08:00 · 08:35–11:15 backups
-    - cron: "35 5 * * *"
-    - cron: "35 6 * * *"
-    - cron: "15 7-9 * * *"          # + odds check
-    # Afternoon/evening – result every 20 min, 12:00–22:40 UTC
-    # (winter 13:00–23:40, summer 14:00–00:40 Sarajevo time).
-    - cron: "0 12-22 * * *"         # + odds check (once an hour)
-    - cron: "20,40 12-22 * * *"
-    # Each run exits in seconds if there's nothing new to post.
-  workflow_dispatch:         # manual run = post immediately (for testing)
+  workflow_dispatch:
     inputs:
       rucno:
-        description: "Šta objaviti"
+        description: "Šta pokrenuti (auto = sve po pravilima, kao cron job)"
         type: choice
-        options: [najava, rezultat, oboje, kvote]
-        default: najava
+        options: [auto, najava, rezultat, oboje, kvote]
+        default: auto
       prisilno:
         description: "Objavi ponovo i ako je već objavljeno (kod kvota: cijela lista)"
         type: boolean
@@ -39,9 +28,10 @@ jobs:
   najava:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      RUCNO: ${{ inputs.rucno || 'auto' }}
     steps:
-      # check out the LATEST commit of the branch, not the one from when the run
-      # was scheduled – otherwise a queued run could miss what was just posted
+      # latest commit of the branch, so a queued run sees what was just posted
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.repository.default_branch }}
@@ -51,39 +41,22 @@ jobs:
           python-version: "3.12"
 
       - name: Objavi rezultat / najavu
-        if: inputs.rucno != 'kvote'
+        if: env.RUCNO != 'kvote'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_NAJAVA_WEBHOOK }}
-          RUCNO: ${{ inputs.rucno }}
           PRISILNO: ${{ inputs.prisilno }}
         run: python najava_bot.py
 
-      # odds only on the hourly runs (and manual "kvote") – installing Chrome takes ~1 min
-      - name: Treba li provjeriti kvote?
-        id: kv
-        run: |
-          if [ "${{ inputs.rucno }}" = "kvote" ] \
-             || [ "${{ github.event.schedule }}" = "0 12-22 * * *" ] \
-             || [ "${{ github.event.schedule }}" = "15 7-9 * * *" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/cache@v4
-        if: steps.kv.outputs.run == 'true'
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-chromium-v1
-
+      # odds on every normal run and on manual "kvote"
       - name: Instaliraj Playwright
-        if: steps.kv.outputs.run == 'true'
+        if: env.RUCNO == 'auto' || env.RUCNO == 'kvote'
         run: |
           pip install -q playwright
-          python -m playwright install --with-deps chromium
+          # GitHub runners already have Google Chrome; download Chromium only if it's missing
+          command -v google-chrome >/dev/null || python -m playwright install --with-deps chromium
 
       - name: Provjeri kvote
-        if: steps.kv.outputs.run == 'true'
+        if: env.RUCNO == 'auto' || env.RUCNO == 'kvote'
         continue-on-error: true      # Meridian down must not block saving the preview/result
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_KVOTE_WEBHOOK || secrets.DISCORD_NAJAVA_WEBHOOK }}
@@ -92,7 +65,7 @@ jobs:
 
       # if Meridian didn't load, a screenshot of what the bot saw is attached to the run
       - uses: actions/upload-artifact@v4
-        if: steps.kv.outputs.run == 'true' && hashFiles('meridian_debug.png') != ''
+        if: hashFiles('meridian_debug.png') != ''
         with:
           name: meridian-screenshot
           path: meridian_debug.png
