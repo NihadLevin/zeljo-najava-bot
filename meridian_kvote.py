@@ -147,6 +147,12 @@ def preuzmi_kvote(headless=True):
                 page.wait_for_selector(".c-event__rivals--home", timeout=30000)
                 page.wait_for_selector(".c-event__game .c-selection", timeout=15000)
             except PWTimeout:
+                # show what the page actually returned (blocked, empty, changed layout...)
+                print(f"Meridian: utakmice se nisu pojavile. URL: {page.url}")
+                print(f"Naslov stranice: {page.title()!r}")
+                body = page.locator("body").inner_text(timeout=5000)[:600].replace("\n", " | ")
+                print(f"Tekst stranice: {body!r}")
+                page.screenshot(path="meridian_debug.png", full_page=False)
                 return []
             page.wait_for_timeout(1500)  # let all odds fill in
             ucitaj_sve(page)
