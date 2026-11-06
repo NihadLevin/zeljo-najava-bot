@@ -19,10 +19,12 @@ TEAM_ID = 10108           # FK Željezničar on FotMob
 POST_HOUR = 8             # post at 08:00 Sarajevo time
 MAX_WAIT_MIN = 60         # if started early, wait at most 60 min until 08:00
 RESULT_MAX_AGE_H = 36     # post a result only if the match ended at most 36 h ago
-# a manual run (GitHub "Run workflow" or FORCE=1) posts immediately;
-# RUCNO chooses what to post: "najava", "rezultat" or "oboje"
-MANUAL = os.environ.get("FORCE") == "1" or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-MANUAL_MODE = os.environ.get("RUCNO") or "najava"
+# RUCNO (set by the workflow): "auto" = normal run (cron-job.org) – result + preview by the rules;
+# "najava" / "rezultat" / "oboje" = manual test run of just that (FORCE=1 also = manual preview)
+MANUAL_MODE = os.environ.get("RUCNO") or "auto"
+MANUAL = MANUAL_MODE in ("najava", "rezultat", "oboje") or os.environ.get("FORCE") == "1"
+if MANUAL and MANUAL_MODE == "auto":
+    MANUAL_MODE = "najava"
 # manual runs also skip anything already posted, unless PRISILNO=true
 MANUAL_FORCE = (os.environ.get("PRISILNO") or "").lower() == "true"
 BASE = "https://www.fotmob.com"
