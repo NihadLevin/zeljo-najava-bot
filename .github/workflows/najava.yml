@@ -90,6 +90,14 @@ jobs:
           OBJAVI_SVE: ${{ inputs.prisilno }}
         run: python kvote_bot.py
 
+      # if Meridian didn't load, a screenshot of what the bot saw is attached to the run
+      - uses: actions/upload-artifact@v4
+        if: steps.kv.outputs.run == 'true' && hashFiles('meridian_debug.png') != ''
+        with:
+          name: meridian-screenshot
+          path: meridian_debug.png
+          retention-days: 3
+
       - name: Sačuvaj šta je objavljeno
         if: always()
         run: |
