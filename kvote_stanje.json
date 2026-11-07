@@ -1,16 +1,16 @@
 {
  "utakmice": {
-  "https://meridianbet.ba/sr/kladjenje/fudbal/bih/premier-liga/fk-velez-mostar-nk-celik-zenica/20014632": {
+  "FK Velez Mostar|NK Celik Zenica": {
    "Domacin": "FK Velez Mostar",
    "Gost": "NK Celik Zenica",
-   "Dan": "Danas",
-   "Vrijeme_Sarajevo": "16:00",
-   "1": 1.72,
-   "X": 3.3,
-   "2": 4.2,
-   "Granica_golova": 2.5,
-   "Manje_golova": 1.64,
-   "Vise_golova": 2.13
+   "Dan": "1:54",
+   "Vrijeme_Sarajevo": "I Pol",
+   "1": null,
+   "X": null,
+   "2": null,
+   "Granica_golova": null,
+   "Manje_golova": null,
+   "Vise_golova": null
   },
   "https://meridianbet.ba/sr/kladjenje/fudbal/bih/premier-liga/nk-siroki-brijeg-fk-zeljeznicar-sarajevo/20014642": {
    "Domacin": "NK Siroki Brijeg",
