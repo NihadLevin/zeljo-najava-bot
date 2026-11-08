@@ -1,37 +1,25 @@
 {
  "utakmice": {
-  "https://meridianbet.ba/sr/kladjenje/fudbal/bih/premier-liga/fk-sloga-meridian-fk-bsk-banja-luka/20014634": {
-   "Domacin": "FK Sloga Meridian",
-   "Gost": "FK BSK Banja Luka",
-   "Dan": "Danas",
-   "Vrijeme_Sarajevo": "13:00",
-   "1": 1.93,
-   "X": 3.1,
-   "2": 3.5,
-   "Granica_golova": 2.5,
-   "Manje_golova": 1.65,
-   "Vise_golova": 2.1
-  },
-  "https://meridianbet.ba/sr/kladjenje/fudbal/bih/premier-liga/fk-borac-banja-luka-fk-radnik-bijeljina/20007518": {
+  "FK Borac Banja Luka|FK Radnik Bijeljina": {
    "Domacin": "FK Borac Banja Luka",
    "Gost": "FK Radnik Bijeljina",
-   "Dan": "Danas",
-   "Vrijeme_Sarajevo": "15:00",
-   "1": 1.18,
-   "X": 6.4,
-   "2": 11.0,
-   "Granica_golova": 2.5,
-   "Manje_golova": 2.29,
-   "Vise_golova": 1.56
+   "Dan": "45:00",
+   "Vrijeme_Sarajevo": "HT",
+   "1": null,
+   "X": null,
+   "2": null,
+   "Granica_golova": null,
+   "Manje_golova": null,
+   "Vise_golova": null
   },
   "https://meridianbet.ba/sr/kladjenje/fudbal/bih/premier-liga/hsk-zrinjski-mostar-fk-sarajevo/20014631": {
    "Domacin": "Hsk Zrinjski Mostar",
    "Gost": "FK Sarajevo",
    "Dan": "Danas",
    "Vrijeme_Sarajevo": "17:30",
-   "1": 1.75,
-   "X": 3.35,
-   "2": 4.0,
+   "1": 1.73,
+   "X": 3.3,
+   "2": 4.1,
    "Granica_golova": 2.5,
    "Manje_golova": 1.62,
    "Vise_golova": 2.17
