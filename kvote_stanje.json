@@ -5,36 +5,36 @@
    "Gost": "Hsk Zrinjski Mostar",
    "Dan": "21.11",
    "Vrijeme_Sarajevo": "13:00",
-   "1": 5.2,
-   "X": 3.85,
-   "2": 1.5,
+   "1": 6.0,
+   "X": 4.0,
+   "2": 1.46,
    "Granica_golova": 2.5,
-   "Manje_golova": 1.86,
-   "Vise_golova": 1.85
+   "Manje_golova": 1.91,
+   "Vise_golova": 1.79
   },
   "https://meridianbet.ba/sr/kladjenje/fudbal/bih/premier-liga/fk-zeljeznicar-sarajevo-fk-borac-banja-luka/20108459": {
    "Domacin": "FK Zeljeznicar Sarajevo",
    "Gost": "FK Borac Banja Luka",
    "Dan": "21.11",
    "Vrijeme_Sarajevo": "16:00",
-   "1": 5.8,
-   "X": 4.1,
-   "2": 1.42,
+   "1": 5.6,
+   "X": 3.95,
+   "2": 1.45,
    "Granica_golova": 2.5,
    "Manje_golova": 1.84,
-   "Vise_golova": 1.86
+   "Vise_golova": 1.87
   },
   "https://meridianbet.ba/sr/kladjenje/fudbal/bih/premier-liga/fk-radnik-bijeljina-fk-velez-mostar/20108477": {
    "Domacin": "FK Radnik Bijeljina",
    "Gost": "FK Velez Mostar",
    "Dan": "21.11",
    "Vrijeme_Sarajevo": "16:00",
-   "1": 2.2,
-   "X": 3.05,
-   "2": 2.9,
+   "1": 2.16,
+   "X": 3.0,
+   "2": 3.05,
    "Granica_golova": 2.5,
-   "Manje_golova": 1.56,
-   "Vise_golova": 2.27
+   "Manje_golova": 1.58,
+   "Vise_golova": 2.24
   },
   "https://meridianbet.ba/sr/kladjenje/fudbal/bih/premier-liga/nk-celik-zenica-fk-sloga-meridian/20107659": {
    "Domacin": "NK Celik Zenica",
@@ -53,12 +53,12 @@
    "Gost": "NK Siroki Brijeg",
    "Dan": "22.11",
    "Vrijeme_Sarajevo": "17:30",
-   "1": 1.49,
-   "X": 3.7,
-   "2": 5.4,
+   "1": 1.36,
+   "X": 4.1,
+   "2": 7.0,
    "Granica_golova": 2.5,
-   "Manje_golova": 1.62,
-   "Vise_golova": 2.12
+   "Manje_golova": 1.73,
+   "Vise_golova": 2.0
   }
  }
 }
